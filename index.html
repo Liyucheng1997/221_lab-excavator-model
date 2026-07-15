@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>挖掘机操作模拟器</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <canvas id="view"></canvas>
+
+    <!-- 开机遮罩:浏览器要求先有一次点击才能出声 -->
+    <div id="splash">
+      <div class="splash-card">
+        <h1>挖掘机操作模拟器</h1>
+        <p class="sub">20 吨级液压反铲 · 真实双手柄操作</p>
+        <div class="pattern-pick">
+          <p>先选一种操作手法(随时按 <kbd>P</kbd> 切换):</p>
+          <div class="pick-row">
+            <button data-pattern="ISO" class="pick sel">
+              <b>ISO 手法</b>
+              <span>日本标准。国内绝大多数机器出厂就是这个,新手从这个学。</span>
+            </button>
+            <button data-pattern="SAE" class="pick">
+              <b>SAE 手法</b>
+              <span>美标。动臂和斗杆跟 ISO 对调,挖掘装载机常用。</span>
+            </button>
+          </div>
+        </div>
+        <button id="start">进入驾驶室</button>
+        <p class="hint">建议接一个游戏手柄:左右摇杆正好对应真机的两根先导手柄。</p>
+      </div>
+    </div>
+
+    <!-- 关卡面板 -->
+    <div id="task" class="panel">
+      <div class="task-head">
+        <h2 id="task-title"></h2>
+        <span id="task-num"></span>
+      </div>
+      <p id="task-brief"></p>
+      <div class="bar"><div id="task-bar"></div></div>
+      <p id="task-hint" class="hint-line"></p>
+      <details id="task-tips">
+        <summary>操作要领</summary>
+        <ul id="tips-list"></ul>
+      </details>
+      <div class="task-nav">
+        <button id="prev-task">上一关</button>
+        <button id="next-task">下一关 (N)</button>
+      </div>
+    </div>
+
+    <!-- 手柄示意图 -->
+    <div id="sticks" class="panel">
+      <div class="sticks-head">
+        <span id="pattern-name"></span>
+        <span class="dim">P 切换</span>
+      </div>
+      <div class="stick-pair">
+        <div class="stick-box">
+          <svg viewBox="0 0 100 100">
+            <circle cx="50" cy="50" r="42" class="ring" />
+            <line x1="50" y1="8" x2="50" y2="92" class="ax" />
+            <line x1="8" y1="50" x2="92" y2="50" class="ax" />
+            <circle id="dot-l" cx="50" cy="50" r="8" class="dot" />
+          </svg>
+          <div class="lbl up" id="l-up"></div>
+          <div class="lbl down" id="l-down"></div>
+          <div class="lbl left" id="l-left"></div>
+          <div class="lbl right" id="l-right"></div>
+          <div class="stick-name">左手柄 <kbd>WASD</kbd></div>
+        </div>
+        <div class="stick-box">
+          <svg viewBox="0 0 100 100">
+            <circle cx="50" cy="50" r="42" class="ring" />
+            <line x1="50" y1="8" x2="50" y2="92" class="ax" />
+            <line x1="8" y1="50" x2="92" y2="50" class="ax" />
+            <circle id="dot-r" cx="50" cy="50" r="8" class="dot" />
+          </svg>
+          <div class="lbl up" id="r-up"></div>
+          <div class="lbl down" id="r-down"></div>
+          <div class="lbl left" id="r-left"></div>
+          <div class="lbl right" id="r-right"></div>
+          <div class="stick-name">右手柄 <kbd>IJKL</kbd></div>
+        </div>
+      </div>
+      <div class="tracks-row">
+        <div class="track-ind"><span>左履带</span><div class="tbar"><i id="tl"></i></div><kbd>R/F</kbd></div>
+        <div class="track-ind"><span>右履带</span><div class="tbar"><i id="tr"></i></div><kbd>T/G</kbd></div>
+      </div>
+    </div>
+
+    <!-- 仪表 -->
+    <div id="gauges" class="panel">
+      <div class="g-row">
+        <span class="g-k">发动机</span><span class="g-v" id="g-rpm">—</span>
+      </div>
+      <div class="g-row">
+        <span class="g-k">油门 <kbd>-</kbd><kbd>+</kbd></span><span class="g-v" id="g-thr">—</span>
+      </div>
+      <div class="g-row">
+        <span class="g-k">斗内土量</span><span class="g-v" id="g-load">—</span>
+      </div>
+      <div class="bar thin"><div id="load-bar"></div></div>
+      <div class="g-row">
+        <span class="g-k">斗齿高程</span><span class="g-v" id="g-depth">—</span>
+      </div>
+      <div class="g-row">
+        <span class="g-k">回转角</span><span class="g-v" id="g-swing">—</span>
+      </div>
+      <div class="g-row" id="spill-row">
+        <span class="g-k warn">斗口已翻过</span><span class="g-v warn">土在往外撒</span>
+      </div>
+    </div>
+
+    <!-- 视角 / 帮助 -->
+    <div id="topbar" class="panel">
+      <span id="cam-name"></span>
+      <span class="dim">C 换视角 · H 帮助 · X 收拢姿态</span>
+    </div>
+
+    <div id="help" class="panel hidden">
+      <h3>操作说明</h3>
+      <table>
+        <tr><th colspan="2">工作装置(两根先导手柄)</th></tr>
+        <tr><td><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></td><td id="help-left"></td></tr>
+        <tr><td><kbd>I</kbd><kbd>J</kbd><kbd>K</kbd><kbd>L</kbd> 或方向键</td><td id="help-right"></td></tr>
+        <tr><th colspan="2">行走(两根操纵杆)</th></tr>
+        <tr><td><kbd>R</kbd>/<kbd>F</kbd></td><td>左履带 前进 / 后退</td></tr>
+        <tr><td><kbd>T</kbd>/<kbd>G</kbd></td><td>右履带 前进 / 后退</td></tr>
+        <tr><th colspan="2">其他</th></tr>
+        <tr><td><kbd>P</kbd></td><td>切换 ISO / SAE 手法</td></tr>
+        <tr><td><kbd>-</kbd> <kbd>+</kbd></td><td>油门 1~10 档</td></tr>
+        <tr><td><kbd>C</kbd></td><td>切换视角(环视 / 驾驶室 / 跟随 / 侧视)</td></tr>
+        <tr><td><kbd>X</kbd></td><td>收拢成行进姿态</td></tr>
+        <tr><td><kbd>N</kbd></td><td>下一关</td></tr>
+        <tr><td><kbd>H</kbd></td><td>开关本说明</td></tr>
+      </table>
+      <p class="dim">
+        接上游戏手柄的话:左右摇杆 = 两根手柄,LT/RT = 左右履带前进,LB/RB = 后退。
+      </p>
+    </div>
+
+    <div id="toast"></div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

@@ -1,0 +1,525 @@
+:root {
+  --bg: rgba(18, 20, 24, 0.82);
+  --line: rgba(255, 255, 255, 0.12);
+  --txt: #e8eaee;
+  --dim: #9aa1ad;
+  --acc: #ffc12b;
+  --ok: #46d67f;
+  --warn: #ff7a45;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #10131a;
+  color: var(--txt);
+  font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+#view {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.panel {
+  position: fixed;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 14px;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 6px 26px rgba(0, 0, 0, 0.42);
+  user-select: none;
+}
+
+kbd {
+  display: inline-block;
+  padding: 1px 5px;
+  margin: 0 1px;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.07);
+  font: 600 11px/1.4 ui-monospace, Consolas, monospace;
+  color: #dfe3ea;
+}
+
+.dim {
+  color: var(--dim);
+  font-size: 12px;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* ── 开机遮罩 ───────────────────────────────────────── */
+#splash {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(circle at 50% 35%, #2b3242, #0d1016 70%);
+}
+
+.splash-card {
+  width: min(620px, 92vw);
+  text-align: center;
+  padding: 34px 30px;
+}
+
+.splash-card h1 {
+  margin: 0;
+  font-size: 34px;
+  letter-spacing: 2px;
+  color: var(--acc);
+}
+
+.splash-card .sub {
+  margin: 6px 0 26px;
+  color: var(--dim);
+}
+
+.pattern-pick p {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--dim);
+}
+
+.pick-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 24px;
+}
+
+.pick {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--txt);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  transition: 0.15s;
+}
+
+.pick:hover {
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.pick.sel {
+  border-color: var(--acc);
+  background: rgba(255, 193, 43, 0.14);
+}
+
+.pick b {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.pick span {
+  font-size: 12px;
+  color: var(--dim);
+  line-height: 1.5;
+}
+
+#start {
+  padding: 12px 42px;
+  font-size: 16px;
+  font-weight: 600;
+  font-family: inherit;
+  border: 0;
+  border-radius: 8px;
+  background: var(--acc);
+  color: #16181d;
+  cursor: pointer;
+}
+
+#start:hover {
+  filter: brightness(1.1);
+}
+
+.splash-card .hint {
+  margin-top: 20px;
+  font-size: 12px;
+  color: var(--dim);
+}
+
+/* ── 关卡面板 ───────────────────────────────────────── */
+#task {
+  top: 14px;
+  left: 14px;
+  width: 330px;
+}
+
+.task-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+#task h2 {
+  margin: 0;
+  font-size: 16px;
+  color: var(--acc);
+}
+
+#task-num {
+  font-size: 12px;
+  color: var(--dim);
+}
+
+#task-brief {
+  margin: 8px 0 10px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #cfd4dc;
+}
+
+.bar {
+  height: 7px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+.bar.thin {
+  height: 5px;
+  margin: 2px 0 8px;
+}
+
+#task-bar,
+#load-bar {
+  height: 100%;
+  width: 0;
+  background: var(--ok);
+  border-radius: 4px;
+  transition: width 0.18s;
+}
+
+#task.done #task-bar {
+  background: var(--acc);
+}
+
+.hint-line {
+  margin: 8px 0;
+  font-size: 12px;
+  color: var(--dim);
+  min-height: 16px;
+}
+
+#task-tips {
+  margin: 6px 0;
+  font-size: 12px;
+}
+
+#task-tips summary {
+  cursor: pointer;
+  color: var(--acc);
+  outline: none;
+}
+
+#tips-list {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  color: #c3c9d3;
+}
+
+#tips-list li {
+  margin-bottom: 7px;
+  line-height: 1.6;
+}
+
+.task-nav {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.task-nav button {
+  flex: 1;
+  padding: 6px;
+  font-size: 12px;
+  font-family: inherit;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--txt);
+  cursor: pointer;
+}
+
+.task-nav button:hover {
+  background: rgba(255, 255, 255, 0.11);
+}
+
+/* ── 手柄示意图 ─────────────────────────────────────── */
+#sticks {
+  left: 14px;
+  bottom: 14px;
+  width: 330px;
+}
+
+.sticks-head {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  font-size: 12px;
+}
+
+#pattern-name {
+  color: var(--acc);
+  font-weight: 600;
+}
+
+.stick-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.stick-box {
+  position: relative;
+  padding: 17px 20px 0;
+}
+
+.stick-box svg {
+  width: 100%;
+  display: block;
+}
+
+.ring {
+  fill: rgba(255, 255, 255, 0.03);
+  stroke: var(--line);
+  stroke-width: 1.5;
+}
+
+.ax {
+  stroke: rgba(255, 255, 255, 0.09);
+  stroke-width: 1;
+}
+
+.dot {
+  fill: var(--acc);
+  transition: none;
+}
+
+.lbl {
+  position: absolute;
+  font-size: 10px;
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+.lbl.up {
+  top: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.lbl.down {
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.lbl.left {
+  left: -6px;
+  top: 52%;
+}
+
+.lbl.right {
+  right: -6px;
+  top: 52%;
+}
+
+.stick-name {
+  margin-top: 6px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.tracks-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.track-ind {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.tbar {
+  position: relative;
+  flex: 1;
+  height: 5px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+.tbar::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: -2px;
+  width: 1px;
+  height: 9px;
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.tbar i {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  height: 100%;
+  width: 0;
+  background: var(--acc);
+  border-radius: 3px;
+}
+
+/* ── 仪表 ───────────────────────────────────────────── */
+#gauges {
+  right: 14px;
+  bottom: 14px;
+  width: 216px;
+}
+
+.g-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin: 5px 0;
+  font-size: 12px;
+}
+
+.g-k {
+  color: var(--dim);
+}
+
+.g-v {
+  font: 600 13px/1 ui-monospace, Consolas, monospace;
+  color: var(--txt);
+}
+
+.warn {
+  color: var(--warn) !important;
+}
+
+#spill-row {
+  display: none;
+}
+
+#spill-row.on {
+  display: flex;
+}
+
+/* ── 顶栏 / 帮助 ────────────────────────────────────── */
+#topbar {
+  top: 14px;
+  right: 14px;
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  padding: 8px 14px;
+  font-size: 12px;
+}
+
+#cam-name {
+  color: var(--acc);
+  font-weight: 600;
+}
+
+#help {
+  top: 60px;
+  right: 14px;
+  width: 330px;
+  font-size: 12px;
+}
+
+#help h3 {
+  margin: 0 0 10px;
+  font-size: 14px;
+  color: var(--acc);
+}
+
+#help table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+#help th {
+  text-align: left;
+  padding: 9px 0 4px;
+  color: var(--acc);
+  font-size: 11px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--line);
+}
+
+#help td {
+  padding: 4px 0;
+  vertical-align: top;
+  color: #c3c9d3;
+}
+
+#help td:first-child {
+  width: 130px;
+}
+
+#help p {
+  margin: 12px 0 0;
+  line-height: 1.6;
+}
+
+/* ── 提示条 ─────────────────────────────────────────── */
+#toast {
+  position: fixed;
+  top: 76px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-14px);
+  padding: 11px 26px;
+  border-radius: 8px;
+  background: rgba(70, 214, 127, 0.94);
+  color: #0d1016;
+  font-weight: 600;
+  opacity: 0;
+  pointer-events: none;
+  transition: 0.3s;
+}
+
+#toast.on {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+@media (max-width: 1180px) {
+  #help,
+  #task-tips {
+    display: none;
+  }
+  #task,
+  #sticks {
+    width: 270px;
+  }
+}
