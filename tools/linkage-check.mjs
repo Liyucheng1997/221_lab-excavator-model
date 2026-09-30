@@ -134,8 +134,8 @@ console.log('\n=== 工作范围 ===\n');
       }
     }
   }
-  console.log(`  最大挖掘半径 ${fmt(maxReach)} m   (真机 20t 级约 9.5~10.0)`);
+  console.log(`  最大挖掘半径 ${fmt(maxReach)} m   (真机 20t 级约 9.9~10.2)`);
   console.log(`  最大挖掘深度 ${fmt(-maxDepth)} m   (真机约 6.5~6.7)`);
-  console.log(`  最大挖掘高度 ${fmt(maxHeight)} m   (真机约 9.5)`);
+  console.log(`  最大挖掘高度 ${fmt(maxHeight)} m   (真机约 9.5~10)`);
 }
 console.log('');
