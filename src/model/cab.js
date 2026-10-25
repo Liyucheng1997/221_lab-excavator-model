@@ -289,7 +289,7 @@ export function buildCab(M, swing) {
 }
 
 /** 坐着的操作员:安全帽 + 反光背心。第三人称视角里有个人,尺度感立刻就对了。 */
-function buildOperator(M) {
+export function buildOperator(M) {
   const g = new THREE.Group();
   const skin = new THREE.MeshStandardMaterial({ color: 0xc89878, roughness: 0.8 });
   const vest = new THREE.MeshStandardMaterial({ color: 0xff7a1a, roughness: 0.7 });

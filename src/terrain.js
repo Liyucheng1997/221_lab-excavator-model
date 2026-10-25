@@ -82,6 +82,7 @@ export class Terrain {
     this.base = new Float32Array(n); // 原始地面,用于判分
     this.disturbed = new Float32Array(n); // 0 = 原状土(硬),1 = 翻动过的松土
     this.tint = new Float32Array(n); // 表层颜色变化(碎石、湿土)
+    this.compact = new Float32Array(n); // 压实度 0~1(压路机压过的地方颜色变浅、发灰、发亮)
 
     const geo = new THREE.PlaneGeometry(this.size, this.size, this.N, this.N);
     geo.rotateX(-Math.PI / 2);
@@ -158,6 +159,7 @@ export class Terrain {
       }
     }
     this.base.set(this.heights);
+    this.compact.fill(0);
     this._markAll();
     this.flush();
   }
@@ -193,6 +195,16 @@ export class Terrain {
         else if (x >= x1 && x <= x2) y = h;
         else if (x > x2 && x < x3) y = ((x3 - x) / (x3 - x2)) * h;
         return { add: y * edge };
+      }
+      case 'pad': {
+        // 松铺的填方:抬高的一块平台,四周放坡,整块都是没压实的松土(压路机练习用)
+        const ax = Math.abs(x - f.x) - f.hx;
+        const az = Math.abs(z - f.z) - f.hz;
+        const e = Math.max(ax, az);
+        const sl = f.slope ?? 1.4;
+        const t = clamp(1 - e / sl, 0, 1);
+        const bumpy = (vnoise(x * 0.8 + 3, z * 0.8 - 2) - 0.5) * (f.rough ?? 0.1);
+        return { add: (f.h + bumpy) * t, loose: e < 0 ? 1 : t > 0 ? 0.8 : 0 };
       }
       case 'level': {
         // 把一块区域强制压到某个高度
@@ -347,10 +359,11 @@ export class Terrain {
         const cut = clamp((this.base[k] - h[k]) / 2.5, 0, 1);
         const t = this.tint[k];
         const slope = clamp(Math.hypot(dx, dz) * 0.6, 0, 1);
+        const cp = this.compact[k];
         this._c.setRGB(
-          0.58 - 0.16 * d + 0.06 * cut + 0.05 * (t - 0.5) - 0.05 * slope,
-          0.5 - 0.17 * d - 0.03 * cut + 0.04 * (t - 0.5) - 0.05 * slope,
-          0.39 - 0.14 * d - 0.07 * cut + 0.03 * (t - 0.5) - 0.04 * slope,
+          0.58 - 0.16 * d + 0.06 * cut + 0.05 * (t - 0.5) - 0.05 * slope + 0.05 * cp,
+          0.5 - 0.17 * d - 0.03 * cut + 0.04 * (t - 0.5) - 0.05 * slope + 0.07 * cp,
+          0.39 - 0.14 * d - 0.07 * cut + 0.03 * (t - 0.5) - 0.04 * slope + 0.1 * cp,
           THREE.SRGBColorSpace
         );
         col.setXYZ(k, this._c.r, this._c.g, this._c.b);
@@ -359,8 +372,9 @@ export class Terrain {
     // 只上传脏的那几行
     const start = this.idx(0, nj0);
     const count = (nj1 - nj0 + 1) * this.stride;
+    // 只追加范围,不清空:同一帧里可能 flush 好几次(换场地全量重建 + 机器挖土),
+    // 先前排队的范围要一起上传;渲染器上传完会自己清空
     for (const a of [pos, nor, col]) {
-      a.clearUpdateRanges();
       a.addUpdateRange(start * 3, count * 3);
       a.needsUpdate = true;
     }

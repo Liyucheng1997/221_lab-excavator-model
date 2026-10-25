@@ -141,7 +141,7 @@ export function buildSite(scene, M, terrainSize) {
   const cornerMat = new THREE.MeshStandardMaterial({ color: 0x8c7a5e, roughness: 1 });
   const corner = new THREE.Mesh(new THREE.PlaneGeometry(terrainSize * 1.5, terrainSize * 1.5), cornerMat);
   corner.rotation.x = -Math.PI / 2;
-  corner.position.y = -0.06;
+  corner.position.y = -0.9; // 压得够低,别从地形的低洼处透出来
   scene.add(corner);
 
   // 围挡:蓝白彩钢板,绕场一圈

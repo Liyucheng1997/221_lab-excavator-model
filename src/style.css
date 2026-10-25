@@ -829,3 +829,93 @@ button.danger {
     grid-template-columns: 1fr;
   }
 }
+
+/* ── 车型切换 ─────────────────────────────── */
+.vtabs {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin: -6px 0 18px;
+}
+.vtab {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.04);
+  text-align: left;
+}
+.vtab b {
+  font-size: 14px;
+}
+.vtab span {
+  font-size: 11px;
+  color: var(--dim);
+}
+.vtab:hover {
+  background: rgba(255, 193, 43, 0.1);
+}
+.vtab.sel {
+  background: rgba(255, 193, 43, 0.16);
+  border-color: rgba(255, 193, 43, 0.65);
+}
+.vtab.sel b {
+  color: var(--acc);
+}
+
+/* ── 轮式机械的操纵/仪表面板 ─────────────── */
+#vkeys {
+  left: 12px;
+  bottom: 12px;
+  width: 300px;
+}
+#vk-bars .track-ind {
+  margin-top: 6px;
+}
+#vk-bars .track-ind > span {
+  width: 64px;
+  flex: none;
+  color: var(--dim);
+}
+.vk-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 8px;
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--dim);
+}
+#vpanel {
+  right: 12px;
+  bottom: 12px;
+  width: 270px;
+}
+#v-canvas {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  border-radius: 6px;
+  image-rendering: pixelated;
+}
+#v-warn div {
+  margin-top: 5px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--warn);
+}
+@media (max-width: 900px) {
+  .vtabs {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  #vkeys {
+    transform: scale(0.8);
+    transform-origin: bottom left;
+  }
+  #vpanel {
+    transform: scale(0.85);
+    transform-origin: bottom right;
+  }
+}

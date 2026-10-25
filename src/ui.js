@@ -6,6 +6,7 @@ import { PATTERNS } from './input.js';
 import { BUCKET, ENGINE, UPPER } from './config.js';
 import { clamp } from './linkage.js';
 import { LESSONS, EXAMS, JOBS, FREE } from './scenarios.js';
+import { VEHICLES, VEHICLE_LIST } from './vehicles/index.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const h = (html) => {
@@ -77,6 +78,13 @@ class Hud {
         </div>
         <div id="m-warn"></div>
       </div>
+      <div id="vkeys" class="panel hidden"><div class="sticks-head"><span id="vk-title"></span><span class="dim">H 全部按键</span></div><div id="vk-bars"></div><div id="vk-legend"></div></div>
+      <div id="vpanel" class="panel hidden">
+        <div class="m-row m-top" id="v-badges"></div>
+        <div class="m-grid" id="v-grid"></div>
+        <canvas id="v-canvas" width="246" height="150" class="hidden"></canvas>
+        <div id="v-warn"></div>
+      </div>
       <div id="keys-hint"></div>
     `;
     this.el = {};
@@ -86,6 +94,50 @@ class Hud {
 
   show(v) {
     this.root.classList.toggle('hidden', !v);
+  }
+
+  /** 换车:挖掘机用手柄示意 + 仪表;其他车用通用面板(内容由车型定义提供) */
+  setVehicle(def) {
+    this.vdef = def;
+    const ex = !def || def.id === 'excavator';
+    for (const id of ['sticks', 'machine']) this.el[id].classList.toggle('hidden', !ex);
+    for (const id of ['vkeys', 'vpanel']) this.el[id].classList.toggle('hidden', ex);
+    if (ex) return;
+    this.el['vk-title'].textContent = def.hud.title;
+    this.el['vk-legend'].innerHTML = def.hud.legend;
+    this.el['vk-bars'].innerHTML = def.hud.bars
+      .map((b, i) => `<div class="track-ind"><span>${b.label}</span><div class="tbar"><i id="vb-${i}"></i></div><kbd>${b.keys}</kbd></div>`)
+      .join('');
+    for (const n of this.el['vk-bars'].querySelectorAll('[id]')) this.el[n.id] = n;
+    this.el['v-canvas'].classList.toggle('hidden', !def.hud.canvas);
+    this._cvT = 0;
+  }
+
+  _updateVehicle(g) {
+    const m = g.m;
+    const E = this.el;
+    const def = this.vdef;
+    const set = (id, txt) => {
+      if (E[id]._t !== txt) {
+        E[id].innerHTML = txt;
+        E[id]._t = txt;
+      }
+    };
+    def.hud.bars.forEach((b, i) => {
+      const v = clamp(b.value(m, g.input.raw), -1, 1);
+      const el = E[`vb-${i}`];
+      const w = Math.abs(v) * 50;
+      el.style.width = `${w}%`;
+      el.style.left = v >= 0 ? '50%' : `${50 - w}%`;
+    });
+    set('v-badges', def.hud.badges(m, g).map(([t, cls]) => `<span class="badge ${cls || ''}">${t}</span>`).join(''));
+    set('v-grid', def.hud.rows(m, g).map(([k, v, cls]) => `<span>${k}</span><b class="${cls || ''}">${v}</b>`).join(''));
+    set('v-warn', def.hud.warns(m, g).map((w) => `<div>${w}</div>`).join(''));
+    if (def.hud.canvas && (this._cvT = (this._cvT || 0) - 1) <= 0) {
+      this._cvT = 12; // 每 12 帧画一次就够了
+      const c = E['v-canvas'];
+      def.hud.canvas(c.getContext('2d'), m, c.width, c.height);
+    }
   }
 
   setScenario(sc, g) {
@@ -161,6 +213,11 @@ class Hud {
     const m = g.m;
     const E = this.el;
     const raw = g.input.raw;
+    if (this.vdef && this.vdef.id !== 'excavator') {
+      this._updateVehicle(g);
+      this._updateCommon(g);
+      return;
+    }
     E['dot-l'].setAttribute('cx', 50 + raw.leftX * 34);
     E['dot-l'].setAttribute('cy', 50 - raw.leftY * 34);
     E['dot-r'].setAttribute('cx', 50 + raw.rightX * 34);
@@ -219,6 +276,17 @@ class Hud {
       E['grade-v'].style.color = Math.abs(e) < 0.05 ? 'var(--ok)' : e > 0 ? 'var(--acc)' : 'var(--warn)';
     } else E.grade.classList.add('hidden');
 
+    this._updateCommon(g);
+  }
+
+  _updateCommon(g) {
+    const m = g.m;
+    const set = (id, txt) => {
+      if (this.el[id]._t !== txt) {
+        this.el[id].innerHTML = txt;
+        this.el[id]._t = txt;
+      }
+    };
     // 计时 / 得分
     const pen = g.penalties?.reduce((a, p) => a + p.pts, 0) || 0;
     set('c-time', `⏱ ${fmt(g.time)}${g.sc?.timeLimit ? ` / ${fmt(g.sc.timeLimit)}` : ''}`);
@@ -308,9 +376,34 @@ export class UI {
       </button>`;
     };
     const lessonsDone = LESSONS.filter((s) => (P[`lesson:${s.id}`]?.stars || 0) > 0).length;
+    const vid = this.app.game.settings.vehicle || 'excavator';
+    const VD = VEHICLES[vid];
+    const tabs = `<div class="vtabs">${VEHICLE_LIST.map(
+      (v) => `<button class="vtab ${v.id === vid ? 'sel' : ''}" data-veh="${v.id}"><b>${v.name}</b><span>${v.short}</span></button>`
+    ).join('')}</div>`;
     let body = '';
-    if (page === 'main') {
-      body = `
+    if (page === 'main' && vid !== 'excavator') {
+      const done = VD.lessons.filter((s) => (P[`lesson:${s.id}`]?.stars || 0) > 0).length;
+      body = `${tabs}
+        <div class="title-block">
+          <div class="brand">${VD.brand}</div>
+          <h1>${VD.title}</h1>
+          <p class="sub">${VD.sub}</p>
+        </div>
+        <div class="menu-grid">
+          <button class="big" data-page="vlessons"><b>培训课程</b><span>${VD.lessons.length} 节课 · 已完成 ${done}/${VD.lessons.length}</span></button>
+          <button class="big" data-sc="${VD.free.kind}:${VD.free.id}"><b>自由练习</b><span>${VD.free.subtitle}</span></button>
+        </div>
+        <div class="menu-row">
+          <button data-page="settings">设置</button>
+          <button data-page="help">按键说明</button>
+        </div>
+        <p class="dim center">${VD.tip || '建议接一个游戏手柄:左摇杆 = 方向盘 + 油门/制动,右摇杆 = 工作装置。'}</p>`;
+    } else if (page === 'vlessons') {
+      body = `<div class="page-head"><button data-page="main">← 返回</button><h2>${VD.name} · 培训课程</h2></div>
+        <div class="cards">${VD.lessons.map(card).join('')}</div>`;
+    } else if (page === 'main') {
+      body = `${tabs}
         <div class="title-block">
           <div class="brand">锐工 RG215 · 20 吨级液压挖掘机</div>
           <h1>挖掘机驾驶培训模拟器</h1>
@@ -352,7 +445,7 @@ export class UI {
           <button class="danger" data-act="resetProgress">清除学习进度</button>
         </div>`;
     } else if (page === 'help') {
-      body = `<div class="page-head"><button data-page="main">← 返回</button><h2>按键说明</h2></div>${helpTable(this.app.game.settings.pattern)}`;
+      body = `<div class="page-head"><button data-page="main">← 返回</button><h2>按键说明 · ${VD.name}</h2></div>${vid === 'excavator' ? helpTable(this.app.game.settings.pattern) : VD.help()}`;
     }
     this.menuEl.innerHTML = `<div class="menu-card ${page === 'main' ? '' : 'wide'}">${body}</div>`;
     this.menuEl.classList.toggle('main', page === 'main');
@@ -360,7 +453,10 @@ export class UI {
       const b = e.target.closest('button');
       if (!b) return;
       this.app.sound.start();
-      if (b.dataset.page) this.showMenu(b.dataset.page);
+      if (b.dataset.veh) {
+        this.app.selectVehicle(b.dataset.veh);
+        this.showMenu('main');
+      } else if (b.dataset.page) this.showMenu(b.dataset.page);
       else if (b.dataset.sc) this.showBrief(b.dataset.sc);
       else if (b.dataset.act === 'resetProgress') {
         if (confirm('确定清除所有学习进度?')) {
@@ -387,19 +483,20 @@ export class UI {
   findScenario(key) {
     const [kind, id] = key.split(':');
     const all = [...LESSONS, ...EXAMS, ...JOBS, FREE];
+    for (const v of VEHICLE_LIST) if (v.lessons) all.push(...v.lessons, v.free);
     return all.find((s) => s.kind === kind && s.id === id);
   }
 
   showBrief(key) {
     const sc = this.findScenario(key);
-    const back = { lesson: 'lessons', exam: 'exam', job: 'jobs', free: 'main' }[sc.kind];
+    const back = sc.vehicle ? (sc.kind === 'free' ? 'main' : 'vlessons') : { lesson: 'lessons', exam: 'exam', job: 'jobs', free: 'main' }[sc.kind];
     this.menuEl.classList.remove('hidden', 'main');
     this.menuEl.innerHTML = `<div class="menu-card wide brief">
       <div class="page-head"><button data-page="${back}">← 返回</button><h2>${sc.title}</h2></div>
       <p class="brief-text">${sc.brief}</p>
       <div class="goals"><b>目标</b><ul>${sc.goals.map((g) => `<li>${g}</li>`).join('')}</ul></div>
       ${sc.timeLimit ? `<p class="dim">时限 ${fmt(sc.timeLimit)}</p>` : ''}
-      <p class="dim">当前手法:${PATTERNS[this.app.game.settings.pattern].name}(可在设置里更改,或游戏中按 P)</p>
+      ${sc.vehicle ? '' : `<p class="dim">当前手法:${PATTERNS[this.app.game.settings.pattern].name}(可在设置里更改,或游戏中按 P)</p>`}
       <button class="primary" data-go="1">开 始</button>
     </div>`;
     this.menuEl.onclick = (e) => {
@@ -467,7 +564,9 @@ export class UI {
   }
 
   showHelp(fromPause = false) {
-    this._modal(`${helpTable(this.app.game.settings.pattern)}<div class="modal-btns"><button data-a="close" class="primary">关闭</button></div>`, () => {
+    const sc = this.app.game.sc;
+    const html = sc?.vehicle ? VEHICLES[sc.vehicle].help() : helpTable(this.app.game.settings.pattern);
+    this._modal(`${html}<div class="modal-btns"><button data-a="close" class="primary">关闭</button></div>`, () => {
       if (fromPause) this.showPause();
       else this.app.resume();
     });
@@ -509,7 +608,7 @@ export class UI {
   }
 
   nextOf(sc) {
-    const list = sc.kind === 'lesson' ? LESSONS : sc.kind === 'job' ? JOBS : null;
+    const list = sc.vehicle ? (sc.kind === 'lesson' ? VEHICLES[sc.vehicle].lessons : null) : sc.kind === 'lesson' ? LESSONS : sc.kind === 'job' ? JOBS : null;
     if (!list) return null;
     const i = list.indexOf(sc);
     return list[i + 1] || null;

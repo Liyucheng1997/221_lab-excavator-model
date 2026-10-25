@@ -15,6 +15,7 @@ import { CameraRig } from './camera.js';
 import { Game } from './game.js';
 import { UI } from './ui.js';
 import { clamp } from './linkage.js';
+import { VEHICLE_LIST } from './vehicles/index.js';
 
 // ── 渲染器 ─────────────────────────────────────────────────────────────
 const canvas = document.getElementById('view');
@@ -41,12 +42,45 @@ const input = new Input();
 const sound = new Sound();
 const rig = new CameraRig(canvas, ex, machine);
 
+// ── 其他车型:全部建好放进场景,只显示当前那台 ─────────────────────────
+const fleet = { excavator: { def: { id: 'excavator' }, model: ex, sim: machine } };
+for (const def of VEHICLE_LIST) {
+  if (def.id === 'excavator') continue;
+  const { model, sim } = def.create(M, terrain);
+  model.root.visible = false;
+  scene.add(model.root);
+  fleet[def.id] = { def, model, sim };
+}
+let V = fleet.excavator;
+
 let game;
 const fx = new Fx(scene, {
   surface: (p) => (truck.accepts(p) ? { y: truck.surfaceAt(p), target: 'truck' } : { y: terrain.heightAt(p.x, p.z), target: 'ground' }),
   onLand: (p, vol, target, fallH) => game.onSoilLand(p, vol, target, fallH),
 });
-machine.onSpill = (p, vol, vel) => fx.spill(p, vol, vel);
+for (const v of Object.values(fleet)) {
+  v.sim.onSpill = (p, vol, vel) => fx.spill(p, vol, vel);
+  // 机器事件只转发当前那台车的
+  v.sim.on('*', (e, d) => {
+    if (game && game.m === v.sim) game._onMachineEvent(e, d);
+  });
+}
+
+/** 换车:显示/隐藏模型,把 game / 相机 / 键位 / HUD 都指向它 */
+function activate(id) {
+  const next = fleet[id] || fleet.excavator;
+  for (const v of Object.values(fleet)) v.model.root.visible = v === next;
+  V = next;
+  if (game) {
+    game.ex = V.model;
+    game.m = V.sim;
+  }
+  rig.ex = V.model;
+  rig.m = V.sim;
+  input.setProfile(V.def.id === 'excavator' ? 'excavator' : V.def.input);
+  if (ui) ui.hud.setVehicle(V.def.id === 'excavator' ? null : V.def);
+  V.model.setOperatorVisible(true);
+}
 
 // ── 应用控制 ───────────────────────────────────────────────────────────
 const app = {
@@ -59,6 +93,7 @@ const app = {
     sound.start();
     ui.closeModal();
     ui.hideMenu();
+    activate(sc.vehicle || 'excavator');
     game.load(sc);
     rig.pipOn = game.settings.pip;
     ui.hud.setCamera(rig.modeName);
@@ -73,9 +108,18 @@ const app = {
     game.exit();
     machine.placeAt(0, 0, 0, 0);
     machine.bucketLoad = 0;
+    terrain.generate({});
+    for (const v of Object.values(fleet)) {
+      if (v.sim === machine) continue;
+      v.sim.bucketLoad = 0;
+      v.sim.placeAt(0, 0, 0);
+      v.sim.startEngineNow();
+    }
     truck.group.visible = false;
     truck.state = 'hidden';
     ui.closeModal();
+    // 菜单背景换回菜单里选中的那台车
+    activate(game.settings.vehicle || 'excavator');
     if (!keep) ui.showMenu('main');
     menuT = 0;
   },
@@ -87,10 +131,19 @@ const app = {
   action(a) {
     handleAction(a);
   },
+  /** 菜单里切换车型:背景换成这台车 */
+  selectVehicle(id) {
+    game.settings.vehicle = id;
+    game.saveSettings();
+    activate(id);
+    menuT = 0;
+  },
 };
 
-const ui = new UI(app);
+let ui = null;
+ui = new UI(app);
 game = new Game({ scene, terrain, ex, m: machine, truck, fx, sound, input, rig, ui });
+activate(game.settings.vehicle || 'excavator');
 
 function applySettings() {
   const s = game.settings;
@@ -127,6 +180,28 @@ function handleAction(a) {
       return;
   }
   if (!inGame) return;
+  if (V.def.id !== 'excavator') {
+    switch (a) {
+      case 'camera':
+        rig.next();
+        ui.hud.setCamera(rig.modeName);
+        return;
+      case 'pip':
+        rig.pipOn = !rig.pipOn;
+        return;
+      case 'lights':
+        V.sim.toggleLights();
+        return;
+      case 'confirm':
+        game.custom.onConfirm?.();
+        return;
+      case 'resetPose':
+        if (!game.sc?.allowReset) return;
+    }
+    const msg = V.def.action(V.sim, a);
+    if (msg) ui.hud.toast(msg);
+    return;
+  }
   switch (a) {
     case 'lock':
       machine.toggleLock();
@@ -167,10 +242,11 @@ function handleAction(a) {
       break;
   }
 }
-for (const a of ['lock', 'travelSpeed', 'mode', 'autoIdle', 'lights', 'throttleUp', 'throttleDown', 'camera', 'pip', 'help', 'pause', 'resetPose', 'confirm']) {
+for (const a of ['lock', 'travelSpeed', 'mode', 'autoIdle', 'lights', 'throttleUp', 'throttleDown', 'camera', 'pip', 'help', 'pause', 'resetPose', 'confirm', 'dirF', 'dirR', 'dirN', 'vibe', 'gate']) {
   input.on(a, () => handleAction(a));
 }
 input.on('pattern', (p) => {
+  if (V.def.id !== 'excavator') return;
   game.settings.pattern = p;
   game.saveSettings();
   ui.hud.setPattern(p);
@@ -179,16 +255,28 @@ input.on('pattern', (p) => {
 // 钥匙:OFF 时按一下 → ON;ON 且没着车时按住 → START;运转时按一下 → OFF
 input.on('keyDown', () => {
   if (!game.running || game.paused) return;
-  if (machine.key === 'off') machine.keyToggle();
-  else if (machine.running) machine.keyToggle();
-  else machine.keyStart(true);
+  const m = V.sim;
+  if (m.key === 'off') m.keyToggle();
+  else if (m.running) m.keyToggle();
+  else m.keyStart(true);
 });
-input.on('keyUp', () => machine.keyStart(false));
+input.on('keyUp', () => V.sim.keyStart(false));
 
 // ── 菜单背景:机器自己演示挖掘动作,相机慢慢绕 ─────────────────────────
 let menuT = 0;
 function menuDemo(dt) {
   menuT += dt;
+  if (V.def.id !== 'excavator') {
+    V.def.demo(V.sim, menuT);
+    const p = V.model.root.position;
+    const a = menuT * 0.06 + 2.2;
+    const cam = rig.camera;
+    const R = V.def.menuDist ?? 14;
+    cam.position.set(p.x + Math.cos(a) * R, p.y + R * 0.36, p.z + Math.sin(a) * R);
+    cam.lookAt(p.x + 1, p.y + (V.def.menuLookY ?? 1.8), p.z);
+    cam.rotateY(0.28 * Math.min(1, cam.aspect / 1.3));
+    return;
+  }
   const t = menuT * 0.35;
   machine.pose.swing = Math.sin(t * 0.7) * 0.9;
   machine.pose.boom = 0.2 + Math.sin(t) * 0.35;
@@ -218,37 +306,42 @@ function frame() {
 
 function step(dt) {
   const playing = game.running && !game.paused && !ui.modalOpen;
+  const m = V.sim;
+  const isEx = V.def.id === 'excavator';
   if (playing) {
     input.enabled = true;
     input.update(dt);
-    machine.setHorn(input.hornPressed);
-    machine.update(dt, input.commands());
+    m.setHorn(input.hornPressed);
+    m.update(dt, isEx ? input.commands() : input.raw);
     game.update(dt);
   } else {
     input.enabled = false;
     input.update(dt);
-    machine.setHorn(false);
+    m.setHorn(false);
   }
   truck.update(game.paused ? 0 : dt, terrain);
   if (!game.running && ui.menuOpen) menuDemo(dt);
 
-  ex.setControls({
-    left: { x: input.raw.leftX, y: input.raw.leftY },
-    right: { x: input.raw.rightX, y: input.raw.rightY },
-    trackL: input.raw.trackL,
-    trackR: input.raw.trackR,
-    locked: machine.locked,
-    throttle: machine.throttle,
-    key: machine.key,
-  });
-  ex.updateFx(dt, machine.status());
+  if (isEx) {
+    ex.setControls({
+      left: { x: input.raw.leftX, y: input.raw.leftY },
+      right: { x: input.raw.rightX, y: input.raw.rightY },
+      trackL: input.raw.trackL,
+      trackR: input.raw.trackR,
+      locked: machine.locked,
+      throttle: machine.throttle,
+      key: machine.key,
+    });
+  } else V.model.setControls(m.controls);
+  V.model.updateFx(dt, m.status());
   fx.update(game.paused ? 0 : dt);
-  fx.exhaust(dt, ex.exhaustWorld(exhaust), machine.rpm, machine.load, machine.running);
+  const ep = V.model.exhaustWorld(exhaust);
+  if (ep) fx.exhaust(dt, ep, m.rpm, m.load, m.running);
 
   if (game.running) rig.update(dt);
 
   // 太阳跟着机器走,保证阴影贴图罩得住
-  const p = ex.root.position;
+  const p = V.model.root.position;
   sun.position.set(p.x + 30, p.y + 40, p.z - 22);
   sun.target.position.copy(p);
   sun.target.updateMatrixWorld();
@@ -258,20 +351,24 @@ function step(dt) {
     ui.hotspots.update(w, hgt);
   }
 
-  const c = machine.cmds;
-  sound.update(dt, {
-    rpm: machine.rpm,
-    load: machine.load,
-    hyd: clamp(Math.abs(c.boom) + Math.abs(c.arm) + Math.abs(c.bucket) + Math.abs(c.swing), 0, 1),
-    relief: machine.relief,
-    travel: clamp((Math.abs(machine.trackVel[0]) + Math.abs(machine.trackVel[1])) / 2, 0, 1),
-    crank: machine.engine === 'crank',
-    running: machine.running,
-    horn: machine.horn,
-    travelAlarm: machine.travelling,
-    truckReversing: truck.state === 'reversing',
-    warn: machine.tilt.kind === 'tip',
-  });
+  let sp;
+  if (isEx) {
+    const c = machine.cmds;
+    sp = {
+      rpm: machine.rpm,
+      load: machine.load,
+      hyd: clamp(Math.abs(c.boom) + Math.abs(c.arm) + Math.abs(c.bucket) + Math.abs(c.swing), 0, 1),
+      relief: machine.relief,
+      travel: clamp((Math.abs(machine.trackVel[0]) + Math.abs(machine.trackVel[1])) / 2, 0, 1),
+      crank: machine.engine === 'crank',
+      running: machine.running,
+      horn: machine.horn,
+      travelAlarm: machine.travelling,
+      warn: machine.tilt.kind === 'tip',
+    };
+  } else sp = m.soundParams();
+  sp.truckReversing = truck.state === 'reversing';
+  sound.update(dt, sp);
 
   render();
 }
@@ -288,9 +385,9 @@ function render() {
     renderer.setScissorTest(true);
     renderer.setScissor(r.x, y, r.w, r.h);
     renderer.setViewport(r.x, y, r.w, r.h);
-    ex.setOperatorVisible(true);
+    V.model.setOperatorVisible(true);
     renderer.render(scene, rig.pip);
-    ex.setOperatorVisible(rig.mode !== 'cab');
+    V.model.setOperatorVisible(rig.mode !== 'cab');
     renderer.setScissorTest(false);
   }
   document.body.classList.toggle('pip-on', game.running && rig.pipOn && rig.mode !== 'side');
@@ -306,11 +403,32 @@ addEventListener('resize', resize);
 new ResizeObserver(resize).observe(document.body);
 
 applySettings();
-ex.setOperatorVisible(true);
+V.model.setOperatorVisible(true);
 machine.startEngineNow();
+for (const v of Object.values(fleet)) if (v.sim !== machine) v.sim.startEngineNow();
 ui.showMenu('main');
 frame();
 
 if (import.meta.env.DEV) {
-  window.__sim = { renderer, scene, ex, machine, terrain, truck, input, game, rig, ui, fx, THREE, step, app };
+  window.__sim = { renderer, scene, ex, machine, terrain, truck, input, game, rig, ui, fx, THREE, step, app, fleet, activate, get V() { return V; } };
+  // 相机摆到当前车周围(方位角、仰角、距离、看向点相对车的偏移)
+  window.__sim.view = (az, el, dist, tx = 0, ty = 1.6, tz = 0) => {
+    const c = rig.camera;
+    const p = V.model.root.position;
+    c.fov = 40;
+    c.position.set(p.x + tx + Math.cos(az) * Math.cos(el) * dist, p.y + ty + Math.sin(el) * dist, p.z + tz + Math.sin(az) * Math.cos(el) * dist);
+    c.lookAt(p.x + tx, p.y + ty, p.z + tz);
+  };
+  // 按指定分辨率渲染一帧,存到 .shots/
+  window.__sim.shot = async (name, sw = 1280, sh = 800) => {
+    const c = rig.camera;
+    renderer.setSize(sw, sh, false);
+    c.aspect = sw / sh;
+    c.updateProjectionMatrix();
+    renderer.render(scene, c);
+    const data = renderer.domElement.toDataURL('image/png');
+    resize();
+    const r = await fetch('/__shot', { method: 'POST', body: JSON.stringify({ name, data }) });
+    return (await r.json()).path;
+  };
 }

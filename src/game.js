@@ -28,6 +28,7 @@ export const RULES = {
   jerkySpill: { pts: 2, msg: '回转起停过猛,土甩出斗外', why: '满斗回转要提前松手、慢慢停,让上车靠惯性滑到位。' },
   workerZone: { pts: 20, msg: '作业半径内有人仍继续作业', why: '任何人进入回转半径,必须立即停止一切动作,鸣笛示意,等人离开再继续。这是挖掘机伤人事故的头号原因。' },
   hitWorker: { fatal: true, msg: '撞到地面人员', why: '重大安全事故。' },
+  workerZoneV: { pts: 20, msg: '机器周围有人仍继续作业', why: '有人进入机器周围的危险区域,必须立即停车、鸣笛示警,等人离开再继续。轮式机械的盲区很大,尤其是车尾。' },
   gasStrike: { fatal: true, msg: '挖断燃气管道', why: '地下管线附近 1 m 内严禁机械开挖,必须人工探挖。挖断燃气管可能引发爆炸。' },
   overturn: { fatal: true, msg: '整机倾翻', why: '重心超出履带支撑范围。重载时不要把斗杆伸到最远,尤其不要在侧面。' },
   tipping: { pts: 10, msg: '出现倾翻险情', why: '车的一侧已经抬起来了!立即收回斗杆、放低载荷。' },
@@ -66,7 +67,7 @@ export class Game {
     this.settings = Object.assign({ pattern: 'ISO', voice: true, pip: false, volume: 0.8, quality: 'high' }, this.progress.settings || {});
     this.tip = new THREE.Vector3();
     this._edgeA = new THREE.Vector3();
-    this.m.on('*', (e, d) => this._onMachineEvent(e, d));
+    // 机器事件由 main 按"当前是哪台车"转发过来(每台车各有一个仿真对象)
     this.truck.onEvent = (e, d) => this._onTruckEvent(e, d);
   }
 
@@ -98,18 +99,23 @@ export class Game {
     this.truck.state = 'hidden';
     this.terrain.generate(sc.layout || {});
     // 默认:发动机已经着车、锁杆锁着、油门中档,停在原点
-    this.m.placeAt(0, 0, 0, 0);
-    this.m.resetPose();
-    this.m.startEngineNow();
-    this.m.setLock(true);
-    this.m.setThrottle(7);
-    this.m.mode = 'P';
-    this.m.travelHi = false;
-    this.m.autoIdle = true;
-    this.m.coolant = 75;
+    if (this.m.kind && this.m.kind !== 'excavator') {
+      this.m.placeAt(0, 0, 0);
+      this.m.resetForScenario();
+    } else {
+      this.m.placeAt(0, 0, 0, 0);
+      this.m.resetPose();
+      this.m.startEngineNow();
+      this.m.setLock(true);
+      this.m.setThrottle(7);
+      this.m.mode = 'P';
+      this.m.travelHi = false;
+      this.m.autoIdle = true;
+      this.m.coolant = 75;
+    }
     if (sc.setup) sc.setup(this);
     this.m.syncTerrain(true);
-    this.ex.setPose(this.m.pose);
+    if (this.isExcavator) this.ex.setPose(this.m.pose);
     this.input.releaseAll();
     this.running = true;
     this.paused = false;
@@ -132,6 +138,10 @@ export class Game {
     this.clear();
     this.ui.hud.show(false);
     if (window.speechSynthesis) speechSynthesis.cancel();
+  }
+
+  get isExcavator() {
+    return !this.m.kind || this.m.kind === 'excavator';
   }
 
   get step() {
@@ -197,10 +207,12 @@ export class Game {
     this.time += dt;
     this.ex.getTipWorld(this.tip);
     this.tipAbove = this.tip.y - this.terrain.heightAt(this.tip.x, this.tip.z);
-    // 铲斗最低点离地(行走、坡道时看这个)
-    let low = 1e9;
-    for (const p of this.ex.bucketWorldPoints(this._bp || (this._bp = []))) low = Math.min(low, p.y - this.terrain.heightAt(p.x, p.z));
-    this.bucketAbove = Math.min(low, this.tipAbove);
+    if (this.isExcavator) {
+      // 铲斗最低点离地(行走、坡道时看这个)
+      let low = 1e9;
+      for (const p of this.ex.bucketWorldPoints(this._bp || (this._bp = []))) low = Math.min(low, p.y - this.terrain.heightAt(p.x, p.z));
+      this.bucketAbove = Math.min(low, this.tipAbove);
+    }
     this.cmds = this.input.commands();
 
     for (const k of this.knockables) k.update(dt);
@@ -230,6 +242,7 @@ export class Game {
 
   _safety(dt) {
     const m = this.m;
+    if (!this.isExcavator) return this._safetyWheeled(dt);
     // 满斗从自卸车驾驶室上方过
     if (this.truck.group.visible && m.bucketLoad > 0.15) {
       if (this.truck.isOverCab(this.tip) || this.truck.isOverCab(this._bucketCenter())) this.deduct('overCab');
@@ -259,6 +272,25 @@ export class Game {
         this.addPenalty('gasStrike');
       }
     }
+  }
+
+  /** 轮式机械:机器周围(或平台下方)有人还在动 */
+  _safetyWheeled(dt) {
+    const m = this.m;
+    let danger = false;
+    const R = m.dangerRadius ? m.dangerRadius() : 6;
+    for (const w of this.workers) {
+      if (!w.active) continue;
+      const d = Math.hypot(w.position.x - m.position.x, w.position.z - m.position.z);
+      if (d < R) {
+        danger = true;
+        if (m.moving && this.time - (w.enteredAt ?? this.time) > 0.8) this.deduct(m.workerRule || 'workerZoneV');
+        w.enteredAt ??= this.time;
+      } else w.enteredAt = undefined;
+    }
+    m.checkWorkers?.(this.workers, this);
+    this.workerDanger = danger;
+    this.ui.hud.alert(danger ? m.workerAlert || '⚠ 有人靠近机器 —— 立即停车,鸣笛示警!' : null);
   }
 
   _anyCmd() {
@@ -313,6 +345,13 @@ export class Game {
       return;
     }
     switch (e) {
+      case 'penalty':
+        if (RULES[d.code]?.fatal) this.addPenalty(d.code);
+        else this.deduct(d.code, d.cooldown ?? 0.5);
+        break;
+      case 'info':
+        this.ui.hud.toast(d.text, 'info', d.why);
+        break;
       case 'noHorn':
         this.deduct('noHorn', 10);
         break;
@@ -326,6 +365,7 @@ export class Game {
         if (o.kind === 'truck') this.deduct(o.lastHit === 'cab' ? 'hitTruckCab' : 'hitTruck', 3);
         else if (o.kind === 'worker') this.addPenalty('hitWorker');
         else if (o.kind === 'pipe') this.addPenalty('gasStrike');
+        else if (o.kind === 'beam') break; // 升降平台撞梁由车自己按"挤压"扣分
         else this.deduct('hitObstacle', 4);
         break;
       }
@@ -385,7 +425,7 @@ export class Game {
 
   _onTruckEvent(e, d) {
     if (e === 'load') {
-      if (d.dropH > 2.2) this.deduct('highDrop', 10);
+      if (d.dropH > (this.isExcavator ? 2.2 : 2.8)) this.deduct('highDrop', 10);
       this.sound.thud(0.1 + d.vol * 2);
     }
     if (this.sc?.onTruck) this.sc.onTruck(this, e, d);

@@ -62,12 +62,43 @@ const ACTIONS = {
   Enter: 'confirm',
 };
 
+// 轮式机械(装载机 / 压路机 / 升降平台)的键位:R/F/T/G 不再是行走杆,换成单次触发的开关
+const WHEEL_AXES = {
+  KeyW: ['leftY', 1],
+  KeyS: ['leftY', -1],
+  KeyA: ['leftX', -1],
+  KeyD: ['leftX', 1],
+  KeyI: ['rightY', 1],
+  KeyK: ['rightY', -1],
+  KeyJ: ['rightX', -1],
+  KeyL: ['rightX', 1],
+  ArrowUp: ['rightY', 1],
+  ArrowDown: ['rightY', -1],
+  ArrowLeft: ['rightX', -1],
+  ArrowRight: ['rightX', 1],
+};
+const WHEEL_ACTIONS = {
+  ...ACTIONS,
+  KeyR: 'dirF',
+  KeyF: 'dirR',
+  KeyN: 'dirN',
+  KeyG: 'vibe',
+  KeyT: 'gate',
+};
+delete WHEEL_ACTIONS.KeyP;
+export const PROFILES = {
+  excavator: { axes: AXES, actions: ACTIONS },
+  wheel: { axes: WHEEL_AXES, actions: WHEEL_ACTIONS },
+};
+
 const KB_RATE = 2.2; // 键盘:每秒增加的手柄行程
 const FINE_CAP = 0.34;
 
 export class Input {
   constructor() {
     this.pattern = 'ISO';
+    this.axes = AXES;
+    this.actions = ACTIONS;
     this.keys = new Set();
     this.gamepadIndex = null;
     this.usingGamepad = false;
@@ -124,15 +155,15 @@ export class Input {
       this.horn = down;
       return;
     }
-    if (down && !e.repeat && ACTIONS[e.code]) {
-      const a = ACTIONS[e.code];
+    if (down && !e.repeat && this.actions[e.code]) {
+      const a = this.actions[e.code];
       if (a === 'pattern') {
         this.pattern = this.pattern === 'ISO' ? 'SAE' : 'ISO';
         this._emit('pattern', this.pattern);
       } else this._emit(a);
       return;
     }
-    if (!AXES[e.code]) return;
+    if (!this.axes[e.code]) return;
     if (down) this.keys.add(e.code);
     else this.keys.delete(e.code);
   }
@@ -163,6 +194,14 @@ export class Input {
     };
     // 按键:A 喇叭、B 锁杆、X 龟兔档、Y 视角、Back 钥匙、Start 暂停、十字键上下 油门
     this.gpHorn = btn(0) > 0.5;
+    if (this.profile === 'wheel') {
+      // 轮式机械:LB/RB = 换向 后退/前进,左摇杆按下 = 振动开关
+      if (pressed(4)) this._emit('dirR');
+      if (pressed(5)) this._emit('dirF');
+      if (pressed(10)) this._emit('vibe');
+      g.trackL = 0;
+      g.trackR = 0;
+    }
     if (pressed(1)) this._emit('lock');
     if (pressed(2)) this._emit('travelSpeed');
     if (pressed(3)) this._emit('camera');
@@ -181,7 +220,7 @@ export class Input {
   update(dt) {
     const fine = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') || this._shift;
     const target = { leftX: 0, leftY: 0, rightX: 0, rightY: 0, trackL: 0, trackR: 0 };
-    if (this.enabled) for (const code of this.keys) if (AXES[code]) target[AXES[code][0]] += AXES[code][1];
+    if (this.enabled) for (const code of this.keys) if (this.axes[code]) target[this.axes[code][0]] += this.axes[code][1];
     const cap = fine ? FINE_CAP : 1;
     // 键盘:按住越久推得越多
     for (const k of Object.keys(this.kb)) {
@@ -216,6 +255,15 @@ export class Input {
     window.addEventListener('keyup', (e) => {
       if (e.key === 'Shift') this._shift = false;
     });
+  }
+
+  /** 切换键位方案(换车的时候) */
+  setProfile(name) {
+    const p = PROFILES[name] || PROFILES.excavator;
+    this.axes = p.axes;
+    this.actions = p.actions;
+    this.profile = name;
+    this.releaseAll();
   }
 
   /**

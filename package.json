@@ -1,9 +1,9 @@
 {
   "name": "excavator-sim",
   "private": true,
-  "version": "1.1.0",
+  "version": "1.2.0",
   "type": "module",
-  "description": "Three.js 挖掘机操作模拟器 / Three.js excavator training simulator",
+  "description": "Three.js 工程机械驾驶培训模拟器(挖掘机、装载机、压路机、升降平台)",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

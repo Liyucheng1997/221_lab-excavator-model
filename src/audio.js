@@ -135,6 +135,31 @@ export class Sound {
       o.start();
     }
 
+    // ── 电机(高空作业平台):行走/泵电机的嗡鸣 ──
+    this.motor = ctx.createOscillator();
+    this.motor.type = 'sawtooth';
+    this.motor.frequency.value = 300;
+    const mbp = ctx.createBiquadFilter();
+    mbp.type = 'bandpass';
+    mbp.frequency.value = 900;
+    mbp.Q.value = 2;
+    this.motorGain = ctx.createGain();
+    this.motorGain.gain.value = 0;
+    this.motor.connect(mbp).connect(this.motorGain).connect(this.master);
+    this.motor.start();
+
+    // ── 振动轮(压路机):偏心块转起来的低频"嗡——"+ 钢轮拍地的颤音 ──
+    this.vib = ctx.createOscillator();
+    this.vib.type = 'square';
+    this.vib.frequency.value = 30;
+    const vlp = ctx.createBiquadFilter();
+    vlp.type = 'lowpass';
+    vlp.frequency.value = 260;
+    this.vibGain = ctx.createGain();
+    this.vibGain.gain.value = 0;
+    this.vib.connect(vlp).connect(this.vibGain).connect(this.master);
+    this.vib.start();
+
     // 蜂鸣(行走报警 / 倒车 / 警告)
     this.beepT = 0;
     this.truckBeepT = 0;
@@ -240,9 +265,15 @@ export class Sound {
     this.starterGain.gain.setTargetAtTime(s.crank ? 0.18 : 0, t, 0.03);
     this.starter.frequency.setTargetAtTime(s.crank ? 48 + Math.random() * 20 : 50, t, 0.02);
     this.hornGain.gain.setTargetAtTime(s.horn ? 0.09 : 0, t, 0.01);
+    const mo = s.motor || 0;
+    this.motor.frequency.setTargetAtTime(220 + mo * 520, t, 0.08);
+    this.motorGain.gain.setTargetAtTime(mo * 0.05, t, 0.08);
+    const vb = s.vibe || 0;
+    if (vb > 0) this.vib.frequency.setTargetAtTime(Math.max(8, vb), t, 0.1);
+    this.vibGain.gain.setTargetAtTime(vb > 0 ? 0.1 + Math.min(0.08, vb * 0.002) : 0, t, 0.15);
 
     // 履带链节咔嗒
-    if (s.travel > 0.05) {
+    if (s.travel > 0.05 && s.clank !== false) {
       this.clankT -= dt * (2 + s.travel * 8);
       if (this.clankT <= 0) {
         this.clankT = 1;
